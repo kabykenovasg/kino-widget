@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Виджет: выбор мест (прототип)</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--bg:#f2f2ee;--fg:#0b0f1a;--card:#fff;--line:#dadad2;--acc:#7c5cff;--accfg:#fff;--free:#d9d9d0;--taken:#a6a6a0;--ok:#c6f432}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0b0f1a;--fg:#f2f2ee;--card:#171d30;--line:#2a3350;--free:#3a4466;--taken:#1d2338;--ok:#c6f432}}
+:root[data-theme="dark"]{--bg:#0b0f1a;--fg:#f2f2ee;--card:#171d30;--line:#2a3350;--free:#3a4466;--taken:#1d2338}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:Manrope,Arial,sans-serif;padding:20px}
+.w{max-width:720px;margin:0 auto;background:var(--card);border:1px solid var(--line);border-radius:20px;padding:20px}
+h1{font-size:22px;margin:0 0 12px}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.tabs button{border:1px solid var(--line);background:none;color:var(--fg);padding:8px 14px;border-radius:999px;cursor:pointer;font:inherit}
+.tabs button.on{background:var(--acc);color:var(--accfg);border-color:var(--acc)}
+.screen{height:8px;border-radius:8px;background:var(--acc);margin:0 10% 18px;opacity:.7}
+.hall{overflow-x:auto;padding-bottom:6px}
+.row{display:flex;gap:6px;justify-content:center;margin-bottom:6px;align-items:center}
+.rn{width:20px;font-size:12px;opacity:.6}
+.s{width:30px;height:30px;border-radius:8px;border:0;background:var(--free);cursor:pointer;flex:none}
+.s.t{background:var(--taken);cursor:not-allowed}
+.s.sel{background:var(--acc)}
+.legend{display:flex;gap:14px;font-size:13px;margin:12px 0;flex-wrap:wrap}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:4px;margin-right:6px;vertical-align:-1px}
+.sum{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:14px}
+.buy{background:var(--acc);color:var(--accfg);border:0;border-radius:12px;padding:12px 20px;font:inherit;font-weight:700;cursor:pointer}
+.buy:disabled{opacity:.4;cursor:not-allowed}
+.msg{margin-top:12px;padding:12px;border-radius:12px;background:var(--ok);color:#0b0f1a;display:none}
+.timer{font-variant-numeric:tabular-nums;font-weight:700}
+</style>
+</head>
+<body>
+<div class="w">
+  <h1>Выбор мест</h1>
+  <div class="tabs" id="tabs"></div>
+  <div class="screen"></div>
+  <div class="hall" id="hall"></div>
+  <div class="legend"><span><i style="background:var(--free)"></i>свободно</span><span><i style="background:var(--acc)"></i>ваш выбор</span><span><i style="background:var(--taken)"></i>занято</span></div>
+  <div class="sum">
+    <div><div id="info">Выберите места (до 6)</div><div>Бронь: <span class="timer" id="timer">—</span></div></div>
+    <button class="buy" id="buy" disabled>Оплатить</button>
+  </div>
+  <div class="msg" id="msg"></div>
+</div>
+<script>
+// Данные демо: сеансы и цена. Потом это будет приходить с сервера (API).
+var sessions=[{t:"Сегодня 18:30",film:"Фильм А",price:400},{t:"Сегодня 21:00",film:"Фильм Б",price:450},{t:"Завтра 12:00",film:"Фильм А",price:300}];
+var ROWS=8,COLS=10,MAX=6,HOLD=600;
+var cur=0,sel=[],left=0,tick=null;
+var $=function(id){return document.getElementById(id)};
+
+function taken(r,c){return (r*7+c*3+cur*5)%6===0}
+
+function drawTabs(){
+  $("tabs").innerHTML="";
+  sessions.forEach(function(s,i){
+    var b=document.createElement("button");
+    b.textContent=s.t+" · "+s.film;
+    b.className=i===cur?"on":"";
+    b.onclick=function(){cur=i;reset();draw()};
+    $("tabs").appendChild(b);
+  });
+}
+function drawHall(){
+  var h=$("hall");h.innerHTML="";
+  for(var r=0;r<ROWS;r++){
+    var row=document.createElement("div");row.className="row";
+    row.innerHTML='<span class="rn">'+(r+1)+'</span>';
+    for(var c=0;c<COLS;c++){
+      var b=document.createElement("button"),id=r+"-"+c;
+      b.className="s"+(taken(r,c)?" t":"")+(sel.indexOf(id)>-1?" sel":"");
+      b.title="Ряд "+(r+1)+", место "+(c+1);
+      if(!taken(r,c)){b.onclick=(function(id){return function(){toggle(id)}})(id)}
+      row.appendChild(b);
+    }
+    h.appendChild(row);
+  }
+}
+function toggle(id){
+  var i=sel.indexOf(id);
+  if(i>-1)sel.splice(i,1);
+  else if(sel.length<MAX){sel.push(id);if(sel.length===1)startHold()}
+  if(!sel.length)stopHold();
+  draw();
+}
+function startHold(){
+  stopHold();left=HOLD;
+  tick=setInterval(function(){
+    left--;showTimer();
+    if(left<=0){reset();show("Время брони истекло, места освобождены.");draw()}
+  },1000);
+  showTimer();
+}
+function stopHold(){clearInterval(tick);tick=null;$("timer").textContent="—"}
+function showTimer(){
+  var m=Math.floor(left/60),s=left%60;
+  $("timer").textContent=m+":"+(s<10?"0":"")+s;
+}
+function reset(){sel=[];stopHold();$("msg").style.display="none"}
+function show(t){var m=$("msg");m.textContent=t;m.style.display="block"}
+function drawSum(){
+  var n=sel.length,p=sessions[cur].price;
+  $("info").textContent=n?("Мест: "+n+" · Итого: "+n*p+" ₽"):"Выберите места (до 6)";
+  $("buy").disabled=!n;
+}
+function draw(){drawTabs();drawHall();drawSum()}
+$("buy").onclick=function(){
+  show("Заказ создан (демо): "+sel.length+" мест, "+sel.length*sessions[cur].price+" ₽. Дальше: оплата и билет с QR.");
+  sel=[];stopHold();draw();
+};
+draw();
+</script>
+</body>
+</html>
